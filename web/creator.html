@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Campfire avatar</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; color: #e8e8f0;
+    font-family: "Courier New", ui-monospace, Menlo, monospace; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  #stage { position: relative; width: 100%; height: 100%; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; display: block; touch-action: none; }
+  body.creator #view { height: 56%; }
+  #scan { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px); }
+  body.creator #scan { height: 56%; }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .name { position: absolute; transform: translate(-50%, 0); font-size: 11px; color: #ffe066; text-shadow: 2px 2px 0 #000; white-space: nowrap; }
+  .name.me { color: #7cf0ff; }
+  .bubble { position: absolute; transform: translate(-50%, -100%); max-width: 62vw; padding: 6px 8px; font-size: 11px; line-height: 1.35;
+    background: #0b1650; border: 2px solid #fff; box-shadow: 3px 3px 0 #000; text-transform: none; letter-spacing: 0; white-space: normal; }
+  .bubble:after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -4px; border: 4px solid transparent; border-top-color: #fff; }
+  #ui { position: absolute; left: 0; right: 0; bottom: 0; height: 44%; padding: 10px 10px 12px; display: none; flex-direction: column; gap: 8px;
+    background: linear-gradient(#0a1440, #02040f); border-top: 3px solid #fff; }
+  body.creator #ui { display: flex; }
+  #tabs { display: flex; gap: 4px; }
+  .tab { flex: 1; text-align: center; padding: 7px 0; font-size: 11px; border: 2px solid #4a5aa8; color: #8f9bd6; background: #050a26; }
+  .tab.on { border-color: #fff; color: #ffe066; background: #1b2a7a; box-shadow: inset 0 -3px 0 #ffe066; }
+  #rows { flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .row { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+  .row .lbl { width: 78px; font-size: 11px; color: #8f9bd6; }
+  .sel { flex: 1; display: flex; align-items: center; justify-content: space-between; border: 2px solid #fff; background: #050a26; height: 34px; }
+  .sel b { width: 40px; height: 100%; display: flex; align-items: center; justify-content: center; color: #ffe066; font-size: 14px; background: #1b2a7a; }
+  .sel span { font-size: 12px; }
+  .sw { flex: 1; display: flex; gap: 5px; flex-wrap: wrap; }
+  .sw i { width: 26px; height: 26px; border: 2px solid #000; outline: 2px solid #4a5aa8; display: block; }
+  .sw i.on { outline: 2px solid #ffe066; transform: translateY(-2px); }
+  #btns { display: flex; gap: 8px; }
+  .btn { flex: 1; padding: 10px 0; text-align: center; font-size: 13px; border: 2px solid #fff; background: #1b2a7a; box-shadow: 3px 3px 0 #000; }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
+  .btn.go { background: #c2410c; color: #fff; }
+  #hint { position: absolute; top: 8px; left: 0; right: 0; text-align: center; font-size: 10px; color: #8f9bd6; text-shadow: 2px 2px 0 #000; pointer-events: none; }
+  body:not(.creator) #hint { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="view"></canvas>
+  <div id="scan"></div>
+  <div id="labels"></div>
+  <div id="hint">Drag to spin</div>
+  <div id="ui">
+    <div id="tabs"></div>
+    <div id="rows"></div>
+    <div id="btns"><div class="btn" id="rand">Random</div><div class="btn go" id="done">Done</div></div>
+  </div>
+</div>
+<!--THREE-->
+<script>
+(function () {
+  'use strict';
+  var T = window.THREE;
+
+  // ---------- options ----------
+  var SKIN = ['#f6d7c3', '#eebb99', '#d69a6e', '#b07246', '#7d4a2a', '#4f2e1b'];
+  var HAIRC = ['#1b1b1f', '#4a2c1a', '#8a5a2b', '#d9b45a', '#b8452e', '#e8e8e8', '#6a4fd6', '#2fb3a0', '#e66aa8'];
+  var CLOTH = ['#d63a3a', '#e8892b', '#e8d24a', '#3fae4f', '#2f8fd6', '#5a3fd6', '#d64aa8', '#f0f0f0', '#3a3a44', '#7a5236'];
+  var OPTS = {
+    head: ['Round', 'Square', 'Long', 'Bean'],
+    eyes: ['Dot', 'Happy', 'Sleepy', 'Big', 'Wink', 'Star'],
+    brows: ['None', 'Soft', 'Bold', 'Worried'],
+    mouth: ['Smile', 'Grin', 'Flat', 'Open', 'Cat', 'Tongue'],
+    hair: ['Bald', 'Bowl', 'Spiky', 'Long', 'Bun', 'Mohawk', 'Curly'],
+    body: ['Slim', 'Regular', 'Chunky'],
+    height: ['Short', 'Medium', 'Tall'],
+    extra: ['None', 'Glasses', 'Cap', 'Headphones', 'Scarf', 'Beanie']
+  };
+  var DEFAULT = { head: 0, skin: 1, eyes: 1, brows: 1, mouth: 0, hair: 1, hairColor: 1, body: 1, height: 1, shirt: 4, pants: 8, extra: 0 };
+  function clampCfg(c) {
+    var o = {}; c = c || {};
+    Object.keys(DEFAULT).forEach(function (k) { var v = c[k]; o[k] = (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.floor(v)) : DEFAULT[k]; });
+    o.head %= OPTS.head.length; o.eyes %= OPTS.eyes.length; o.brows %= OPTS.brows.length; o.mouth %= OPTS.mouth.length;
+    o.hair %= OPTS.hair.length; o.body %= OPTS.body.length; o.height %= OPTS.height.length; o.extra %= OPTS.extra.length;
+    o.skin %= SKIN.length; o.hairColor %= HAIRC.length; o.shirt %= CLOTH.length; o.pants %= CLOTH.length;
+    return o;
+  }
+
+  // ---------- PS1 renderer ----------
+  var canvas = document.getElementById('view');
+  var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: false, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  var LOWRES = 200; // horizontal pixels of the internal framebuffer
+  var snapU = { value: new T.Vector2(100, 75) };
+  var rt = new T.WebGLRenderTarget(4, 4, { minFilter: T.NearestFilter, magFilter: T.NearestFilter });
+  var post = new T.ShaderMaterial({
+    uniforms: { tDiffuse: { value: null }, res: { value: new T.Vector2(1, 1) } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: [
+      'uniform sampler2D tDiffuse; uniform vec2 res; varying vec2 vUv;',
+      'float bayer(vec2 p){ int x = int(mod(p.x,4.0)); int y = int(mod(p.y,4.0)); int i = x + y*4;',
+      ' float m[16]; m[0]=0.;m[1]=8.;m[2]=2.;m[3]=10.;m[4]=12.;m[5]=4.;m[6]=14.;m[7]=6.;m[8]=3.;m[9]=11.;m[10]=1.;m[11]=9.;m[12]=15.;m[13]=7.;m[14]=13.;m[15]=5.;',
+      ' for(int k=0;k<16;k++){ if(k==i) return m[k]/16.0; } return 0.0; }',
+      'void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; float d = bayer(floor(vUv*res)) - 0.5;',
+      ' c += d / 24.0; c = floor(c * 31.0 + 0.5) / 31.0; gl_FragColor = vec4(c, 1.0); }'
+    ].join('\n'),
+    depthTest: false, depthWrite: false
+  });
+  var postScene = new T.Scene();
+  var postCam = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  postScene.add(new T.Mesh(new T.PlaneGeometry(2, 2), post));
+
+  function psx(mat) {
+    mat.onBeforeCompile = function (s) {
+      s.uniforms.uSnap = snapU;
+      s.vertexShader = 'uniform vec2 uSnap;\n' + s.vertexShader.replace('#include <project_vertex>',
+        '#include <project_vertex>\n gl_Position.xy = floor(gl_Position.xy / gl_Position.w * uSnap + 0.5) / uSnap * gl_Position.w;');
+    };
+    return mat;
+  }
+  var matCache = {};
+  function lam(color) {
+    var k = 'l' + color;
+    if (!matCache[k]) matCache[k] = psx(new T.MeshLambertMaterial({ color: color, flatShading: true }));
+    return matCache[k];
+  }
+  function basic(color) {
+    var k = 'b' + color;
+    if (!matCache[k]) matCache[k] = psx(new T.MeshBasicMaterial({ color: color }));
+    return matCache[k];
+  }
+  function mesh(geo, mat, x, y, z) { var m = new T.Mesh(geo, mat); m.position.set(x || 0, y || 0, z || 0); return m; }
+
+  // ---------- face texture (pixel art, 24x24) ----------
+  function faceTexture(cfg, blink) {
+    var S = 24, c = document.createElement('canvas'); c.width = c.height = S;
+    var g = c.getContext('2d');
+    function px(x, y, col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+    function rect(x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, h); }
+    var ink = '#1a1020', white = '#ffffff', blush = 'rgba(240,110,120,0.55)';
+    var L = 7, R = 16, EY = 10; // eye centres
+    function eye(cx, kind, right) {
+      if (blink && kind !== 4) kind = 2;
+      if (kind === 4 && right) kind = 1; // wink: right eye closed (happy arc)
+      if (kind === 0) { rect(cx - 1, EY - 1, 2, 3, ink); px(cx - 1, EY - 1, white); }
+      else if (kind === 1) { px(cx - 2, EY + 1, ink); px(cx - 1, EY, ink); px(cx, EY, ink); px(cx + 1, EY + 1, ink); }
+      else if (kind === 2) { rect(cx - 2, EY + 1, 4, 1, ink); }
+      else if (kind === 3) { rect(cx - 2, EY - 2, 4, 5, white); rect(cx - 1, EY - 1, 3, 3, ink); px(cx - 1, EY - 1, white); rect(cx - 2, EY - 2, 4, 1, ink); }
+      else if (kind === 4) { rect(cx - 1, EY - 1, 2, 3, ink); px(cx - 1, EY - 1, white); }
+      else if (kind === 5) { px(cx, EY - 2, ink); rect(cx - 2, EY, 5, 1, ink); px(cx, EY + 2, ink); rect(cx - 1, EY - 1, 3, 3, ink); px(cx, EY, '#ffe066'); }
+    }
+    eye(L, cfg.eyes, false); eye(R, cfg.eyes, true);
+    var by = EY - 4;
+    if (cfg.brows === 1) { rect(L - 2, by, 4, 1, ink); rect(R - 2, by, 4, 1, ink); }
+    if (cfg.brows === 2) { rect(L - 2, by, 5, 2, ink); rect(R - 3, by, 5, 2, ink); }
+    if (cfg.brows === 3) { px(L - 2, by + 1, ink); rect(L - 1, by, 3, 1, ink); px(R + 1, by + 1, ink); rect(R - 2, by, 3, 1, ink); }
+    rect(L - 4, EY + 3, 3, 1, blush); rect(R + 2, EY + 3, 3, 1, blush);
+    var mx = 12, my = 17;
+    if (cfg.mouth === 0) { px(mx - 3, my, ink); rect(mx - 2, my + 1, 4, 1, ink); px(mx + 2, my, ink); }
+    else if (cfg.mouth === 1) { rect(mx - 3, my, 6, 1, ink); rect(mx - 3, my + 1, 6, 1, white); rect(mx - 2, my + 2, 4, 1, ink); px(mx - 3, my + 1, ink); px(mx + 2, my + 1, ink); }
+    else if (cfg.mouth === 2) { rect(mx - 2, my + 1, 4, 1, ink); }
+    else if (cfg.mouth === 3) { rect(mx - 1, my, 3, 3, ink); px(mx, my + 2, '#d9475a'); }
+    else if (cfg.mouth === 4) { px(mx - 3, my, ink); px(mx - 2, my + 1, ink); px(mx - 1, my, ink); px(mx, my + 1, ink); px(mx + 1, my, ink); }
+    else if (cfg.mouth === 5) { px(mx - 3, my, ink); rect(mx - 2, my + 1, 4, 1, ink); px(mx + 2, my, ink); rect(mx - 1, my + 2, 2, 2, '#e8566a'); }
+    var tex = new T.CanvasTexture(c);
+    tex.magFilter = T.NearestFilter; tex.minFilter = T.NearestFilter; tex.generateMipmaps = false;
+    return tex;
+  }
+
+  // ---------- avatar builder ----------
+  function buildAvatar(cfgIn) {
+    var cfg = clampCfg(cfgIn);
+    var root = new T.Group(); root.userData.cfg = cfg;
+    var skin = lam(SKIN[cfg.skin]), hairM = lam(HAIRC[cfg.hairColor]);
+    var shirt = lam(CLOTH[cfg.shirt]), pants = lam(CLOTH[cfg.pants]), shoe = lam('#22222a');
+    var hScale = [0.88, 1, 1.12][cfg.height], wScale = [0.85, 1, 1.25][cfg.body];
+
+    var body = new T.Group(); root.add(body);
+    // legs
+    var legG = new T.CylinderGeometry(0.11 * wScale, 0.1 * wScale, 0.42 * hScale, 5);
+    var legL = mesh(legG, pants, -0.12 * wScale, 0.21 * hScale, 0), legR = mesh(legG, pants, 0.12 * wScale, 0.21 * hScale, 0);
+    body.add(legL, legR);
+    var shoeG = new T.BoxGeometry(0.16 * wScale, 0.08, 0.24);
+    body.add(mesh(shoeG, shoe, -0.12 * wScale, 0.04, 0.04), mesh(shoeG, shoe, 0.12 * wScale, 0.04, 0.04));
+    // torso
+    var torsoH = 0.5 * hScale;
+    var torso = mesh(new T.CylinderGeometry(0.2 * wScale, 0.26 * wScale, torsoH, 6), shirt, 0, 0.42 * hScale + torsoH / 2, 0);
+    torso.rotation.y = Math.PI / 6; body.add(torso);
+    // arms
+    var armG = new T.CylinderGeometry(0.065, 0.06, 0.42 * hScale, 4); armG.translate(0, -0.21 * hScale, 0);
+    var shoulderY = 0.42 * hScale + torsoH - 0.05;
+    var armL = mesh(armG, shirt, -0.27 * wScale, shoulderY, 0), armR = mesh(armG, shirt, 0.27 * wScale, shoulderY, 0);
+    armL.rotation.z = -0.18; armR.rotation.z = 0.18;
+    var handG = new T.IcosahedronGeometry(0.07, 0);
+    armL.add(mesh(handG, skin, 0, -0.44 * hScale, 0)); armR.add(mesh(handG, skin, 0, -0.44 * hScale, 0));
+    body.add(armL, armR);
+    root.userData.arms = [armL, armR];
+
+    // head
+    var headY = shoulderY + 0.36;
+    var head = new T.Group(); head.position.y = headY; root.add(head); root.userData.head = head; root.userData.headY = headY;
+    var hg, hs = [1, 1, 1];
+    if (cfg.head === 0) hg = new T.IcosahedronGeometry(0.34, 1);
+    else if (cfg.head === 1) { hg = new T.BoxGeometry(0.58, 0.56, 0.56); }
+    else if (cfg.head === 2) { hg = new T.IcosahedronGeometry(0.33, 1); hs = [0.92, 1.18, 0.95]; }
+    else { hg = new T.IcosahedronGeometry(0.34, 1); hs = [1.12, 0.92, 1]; }
+    var headM = mesh(hg, skin); headM.scale.set(hs[0], hs[1], hs[2]); head.add(headM);
+    var front = (cfg.head === 1 ? 0.282 : 0.335 * hs[2]);
+    // ears
+    var earG = new T.IcosahedronGeometry(0.07, 0);
+    head.add(mesh(earG, skin, -0.33 * hs[0], 0, 0), mesh(earG, skin, 0.33 * hs[0], 0, 0));
+    // face decal
+    var faceMat = new T.MeshBasicMaterial({ map: faceTexture(cfg, false), transparent: true, alphaTest: 0.5, depthWrite: false });
+    psx(faceMat);
+    var face = mesh(new T.PlaneGeometry(0.52, 0.52), faceMat, 0, -0.03, front + 0.03); head.add(face);
+    root.userData.face = face; root.userData.faceOpen = faceMat.map; root.userData.faceBlink = faceTexture(cfg, true);
+    // nose
+    head.add(mesh(new T.TetrahedronGeometry(0.045, 0), skin, 0, -0.05, front + 0.03));
+
+    // hair
+    var top = 0.34 * hs[1];
+    if (cfg.hair === 1) { var cap = mesh(new T.SphereGeometry(0.37 * hs[0], 7, 4, 0, Math.PI * 2, 0, Math.PI / 2.1), hairM, 0, 0.02, -0.01); cap.scale.set(1, 1.05 * hs[1], 1.02); head.add(cap); head.add(mesh(new T.BoxGeometry(0.62 * hs[0], 0.1, 0.12), hairM, 0, 0.16, front - 0.04)); }
+    if (cfg.hair === 2) { for (var i = 0; i < 9; i++) { var a = (i / 9) * Math.PI * 2; var sp = mesh(new T.ConeGeometry(0.09, 0.3, 4), hairM, Math.cos(a) * 0.2, top - 0.02, Math.sin(a) * 0.2 - 0.03); sp.rotation.z = -Math.cos(a) * 0.6; sp.rotation.x = Math.sin(a) * 0.6; head.add(sp); } head.add(mesh(new T.ConeGeometry(0.1, 0.36, 4), hairM, 0, top + 0.08, 0)); }
+    if (cfg.hair === 3) { var lc = mesh(new T.SphereGeometry(0.38 * hs[0], 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), hairM, 0, 0.03, 0); lc.scale.y = 1.05 * hs[1]; head.add(lc); var back = mesh(new T.BoxGeometry(0.64 * hs[0], 0.62, 0.18), hairM, 0, -0.18, -0.24); head.add(back); head.add(mesh(new T.BoxGeometry(0.12, 0.5, 0.3), hairM, -0.31 * hs[0], -0.14, -0.02), mesh(new T.BoxGeometry(0.12, 0.5, 0.3), hairM, 0.31 * hs[0], -0.14, -0.02)); }
+    if (cfg.hair === 4) { var bc = mesh(new T.SphereGeometry(0.37 * hs[0], 7, 4, 0, Math.PI * 2, 0, Math.PI / 2.2), hairM, 0, 0.03, -0.01); bc.scale.y = hs[1]; head.add(bc); head.add(mesh(new T.IcosahedronGeometry(0.15, 0), hairM, 0, top + 0.1, -0.08)); }
+    if (cfg.hair === 5) { for (var j = 0; j < 5; j++) head.add(mesh(new T.BoxGeometry(0.08, 0.2 + (j === 2 ? 0.06 : 0), 0.14), hairM, 0, top + 0.03, 0.2 - j * 0.11)); }
+    if (cfg.hair === 6) { for (var k = 0; k < 14; k++) { var aa = (k / 14) * Math.PI * 2, rr = k % 2 ? 0.27 : 0.18; head.add(mesh(new T.IcosahedronGeometry(0.11, 0), hairM, Math.cos(aa) * rr, top - 0.02 + (k % 3) * 0.03, Math.sin(aa) * rr - 0.05)); } head.add(mesh(new T.IcosahedronGeometry(0.14, 0), hairM, 0, top + 0.05, 0)); }
+
+    // extras
+    var dark = lam('#141418'), accent = lam(CLOTH[(cfg.shirt + 3) % CLOTH.length]);
+    if (cfg.extra === 1) { var rim = basic('#141418'); var ring = new T.TorusGeometry(0.075, 0.016, 3, 6); var gl1 = mesh(ring, rim, -0.11, 0.045, front + 0.03), gl2 = mesh(ring, rim, 0.11, 0.045, front + 0.03); head.add(gl1, gl2, mesh(new T.BoxGeometry(0.08, 0.02, 0.02), rim, 0, 0.05, front + 0.03)); }
+    if (cfg.extra === 2) { var cp = mesh(new T.CylinderGeometry(0.3 * hs[0], 0.36 * hs[0], 0.2, 7), accent, 0, top - 0.03, 0); head.add(cp); var brim = mesh(new T.BoxGeometry(0.4, 0.035, 0.26), accent, 0, top - 0.11, front - 0.02); head.add(brim); }
+    if (cfg.extra === 3) { var band = mesh(new T.TorusGeometry(0.36 * hs[0], 0.03, 3, 8, Math.PI), dark, 0, 0.02, 0); head.add(band); var cupG = new T.CylinderGeometry(0.1, 0.1, 0.08, 6); var c1 = mesh(cupG, accent, -0.36 * hs[0], 0, 0), c2 = mesh(cupG, accent, 0.36 * hs[0], 0, 0); c1.rotation.z = c2.rotation.z = Math.PI / 2; head.add(c1, c2); }
+    if (cfg.extra === 4) { var sc = mesh(new T.TorusGeometry(0.17 * wScale, 0.07, 3, 7), accent, 0, shoulderY + 0.02, 0); sc.rotation.x = Math.PI / 2; root.add(sc); root.add(mesh(new T.BoxGeometry(0.1, 0.28, 0.06), accent, 0.1, shoulderY - 0.15, 0.2 * wScale)); }
+    if (cfg.extra === 5) { var bn = mesh(new T.SphereGeometry(0.38 * hs[0], 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), accent, 0, 0.06, 0); bn.scale.y = 1.1 * hs[1]; head.add(bn); head.add(mesh(new T.IcosahedronGeometry(0.08, 0), lam('#f0f0f0'), 0, top + 0.13, 0)); }
+
+    root.userData.blinkAt = 1 + Math.random() * 3;
+    root.userData.phase = Math.random() * 6;
+    return root;
+  }
+
+  function animateAvatar(av, t, dt, sitting) {
+    var u = av.userData;
+    var bob = Math.sin(t * 2.2 + u.phase) * 0.02;
+    u.head.position.y = u.headY + bob;
+    u.head.rotation.z = Math.sin(t * 1.1 + u.phase) * 0.06;
+    if (!sitting) { u.arms[0].rotation.z = -0.18 - Math.sin(t * 2.2 + u.phase) * 0.06; u.arms[1].rotation.z = 0.18 + Math.sin(t * 2.2 + u.phase) * 0.06; }
+    else { u.arms[0].rotation.x = u.arms[1].rotation.x = -0.6 + Math.sin(t * 1.3 + u.phase) * 0.05; }
+    u.blinkAt -= dt;
+    if (u.blinkAt < 0) { u.face.material.map = u.faceBlink; if (u.blinkAt < -0.12) { u.face.material.map = u.faceOpen; u.blinkAt = 2 + Math.random() * 3; } }
+  }
+
+  // ---------- scenes ----------
+  var scene = new T.Scene();
+  var camera = new T.PerspectiveCamera(40, 1, 0.1, 60);
+  var mode = 'creator', me = null, turntable = null, plinth = null;
+  var hub = { avatars: {}, list: [], fire: null, flames: [], light: null };
+  var stars;
+
+  function starfield(n, r, color) {
+    var g = new T.BufferGeometry(), p = [];
+    for (var i = 0; i < n; i++) { var a = Math.random() * Math.PI * 2, e = Math.random() * 0.9 + 0.05; p.push(Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r); }
+    g.setAttribute('position', new T.Float32BufferAttribute(p, 3));
+    return new T.Points(g, new T.PointsMaterial({ color: color, size: 1, sizeAttenuation: false }));
+  }
+  function checker(a, b, n) {
+    var c = document.createElement('canvas'); c.width = c.height = n * 2; var g = c.getContext('2d');
+    for (var y = 0; y < 2; y++) for (var x = 0; x < 2; x++) { g.fillStyle = (x + y) % 2 ? a : b; g.fillRect(x * n, y * n, n, n); }
+    var t = new T.CanvasTexture(c); t.magFilter = t.minFilter = T.NearestFilter; t.wrapS = t.wrapT = T.RepeatWrapping; t.generateMipmaps = false; return t;
+  }
+
+  function setupCreator() {
+    scene.background = new T.Color('#0a0f3a');
+    scene.fog = new T.Fog('#0a0f3a', 6, 14);
+    scene.add(new T.HemisphereLight('#c8d4ff', '#3a2050', 1.4));
+    scene.add(new T.AmbientLight('#ffffff', 0.55));
+    var d = new T.DirectionalLight('#fff4e0', 1.5); d.position.set(1.2, 2.5, 4); scene.add(d);
+    turntable = new T.Group(); scene.add(turntable);
+    var ptex = checker('#2a3a9a', '#1a2470', 4); ptex.repeat.set(4, 1);
+    plinth = mesh(new T.CylinderGeometry(0.8, 0.9, 0.18, 10), psx(new T.MeshLambertMaterial({ map: ptex, flatShading: true })), 0, -0.09, 0);
+    turntable.add(plinth);
+    var ring = mesh(new T.TorusGeometry(1.25, 0.02, 3, 16), basic('#ffe066'), 0, 0.02, 0); ring.rotation.x = Math.PI / 2; scene.add(ring); hub.ring = ring;
+    stars = starfield(220, 18, '#ffffff'); scene.add(stars);
+    camera.position.set(0, 1.2, 4.4); camera.lookAt(0, 0.82, 0);
+    setAvatar(window.__cfg || DEFAULT);
+  }
+  function setAvatar(cfg) {
+    if (me) turntable.remove(me);
+    me = buildAvatar(cfg); turntable.add(me);
+    current = clampCfg(cfg);
+  }
+
+  function setupHub() {
+    scene.background = new T.Color('#05061a');
+    scene.fog = new T.Fog('#05061a', 8, 20);
+    scene.add(new T.HemisphereLight('#8090e0', '#202040', 1.1));
+    scene.add(new T.AmbientLight('#ffffff', 0.25));
+    var gtex = checker('#1d4a2a', '#173d22', 4); gtex.repeat.set(10, 10);
+    var ground = mesh(new T.CircleGeometry(12, 12), psx(new T.MeshLambertMaterial({ map: gtex, flatShading: true })));
+    ground.rotation.x = -Math.PI / 2; scene.add(ground);
+    // campfire
+    var fire = new T.Group(); scene.add(fire); hub.fire = fire;
+    var logM = lam('#5a3a22');
+    for (var i = 0; i < 4; i++) { var lg = mesh(new T.CylinderGeometry(0.06, 0.06, 0.7, 5), logM, 0, 0.08, 0); lg.rotation.z = Math.PI / 2; lg.rotation.y = i * Math.PI / 4; fire.add(lg); }
+    var stoneM = lam('#6a6a74');
+    for (var s = 0; s < 9; s++) { var sa = s / 9 * Math.PI * 2; fire.add(mesh(new T.DodecahedronGeometry(0.09, 0), stoneM, Math.cos(sa) * 0.48, 0.05, Math.sin(sa) * 0.48)); }
+    var fcols = ['#ffdb4a', '#ff9a2a', '#ff5a1a'];
+    for (var f = 0; f < 3; f++) { var fl = mesh(new T.ConeGeometry(0.22 - f * 0.05, 0.6 - f * 0.1, 5), basic(fcols[f]), 0, 0.35, 0); fire.add(fl); hub.flames.push(fl); }
+    hub.light = new T.PointLight('#ff9a40', 3, 12, 1.2); hub.light.position.set(0, 0.7, 0); scene.add(hub.light);
+    // trees
+    var treeM = lam('#1f5a35'), trunkM = lam('#4a3020');
+    for (var t = 0; t < 14; t++) { var ta = t / 14 * Math.PI * 2 + Math.random() * 0.3, tr = 5.5 + Math.random() * 2.5; var tg = new T.Group(); tg.position.set(Math.cos(ta) * tr, 0, Math.sin(ta) * tr); tg.add(mesh(new T.CylinderGeometry(0.08, 0.1, 0.5, 5), trunkM, 0, 0.25, 0)); tg.add(mesh(new T.ConeGeometry(0.6, 1.4, 5), treeM, 0, 1.1, 0)); tg.add(mesh(new T.ConeGeometry(0.45, 1.0, 5), treeM, 0, 1.7, 0)); var sc = 0.8 + Math.random() * 0.6; tg.scale.set(sc, sc, sc); scene.add(tg); }
+    stars = starfield(300, 20, '#c8d4ff'); scene.add(stars);
+    camera.fov = 58; camera.updateProjectionMatrix(); camera.position.set(0, 2.5, 5.4); camera.lookAt(0, 0.5, -0.9);
+  }
+  function layoutHub(list) {
+    // list: [{id, name, config, me, highlight}]
+    Object.keys(hub.avatars).forEach(function (id) { scene.remove(hub.avatars[id].obj); });
+    hub.avatars = {}; hub.list = list || [];
+    // Everyone sits in an arc on the far side of the fire, facing the camera, so faces stay visible.
+    var n = hub.list.length, perRow = 4;
+    hub.list.forEach(function (p, i) {
+      var row = Math.floor(i / perRow), inRow = Math.min(perRow, n - row * perRow), k = i % perRow;
+      var span = Math.PI - 1.1 + row * 0.35, a = Math.PI + (Math.PI - span) / 2 + (inRow > 1 ? k / (inRow - 1) : 0.5) * span;
+      var r = 1.6 + row * 1.15;
+      var obj = buildAvatar(p.config); obj.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      obj.lookAt(Math.cos(a) * r * 0.3, 0, 6); obj.scale.setScalar(0.8);
+      if (p.highlight) { var hl = mesh(new T.RingGeometry(0.32, 0.42, 8), basic('#ffe066'), 0, 0.02, 0); hl.rotation.x = -Math.PI / 2; obj.add(hl); }
+      scene.add(obj);
+      hub.avatars[p.id] = { obj: obj, data: p, bubble: null, bubbleUntil: 0 };
+    });
+    renderLabels(true);
+  }
+
+  // ---------- labels / bubbles ----------
+  var labels = document.getElementById('labels');
+  var v3 = new T.Vector3();
+  function renderLabels(rebuild) {
+    if (mode !== 'hub') return;
+    if (rebuild) {
+      labels.innerHTML = '';
+      Object.keys(hub.avatars).forEach(function (id) {
+        var e = document.createElement('div'); e.className = 'name' + (hub.avatars[id].data.me ? ' me' : '');
+        e.textContent = hub.avatars[id].data.name || '???'; labels.appendChild(e); hub.avatars[id].label = e;
+      });
+    }
+    var w = canvas.clientWidth, h = canvas.clientHeight, now = performance.now();
+    Object.keys(hub.avatars).forEach(function (id) {
+      var A = hub.avatars[id], o = A.obj;
+      v3.set(0, 0, 0); o.localToWorld(v3); v3.project(camera);
+      var x = (v3.x * 0.5 + 0.5) * w, y = (-v3.y * 0.5 + 0.5) * h;
+      A.label.style.left = x + 'px'; A.label.style.top = (y + 6) + 'px';
+      if (A.bubble) {
+        if (now > A.bubbleUntil) { A.bubble.remove(); A.bubble = null; }
+        else { v3.set(0, o.userData.headY + 0.5, 0); o.localToWorld(v3); v3.project(camera); var hw = A.bubble.offsetWidth / 2 + 6; A.bubble.style.left = Math.min(Math.max((v3.x * 0.5 + 0.5) * w, hw), w - hw) + 'px'; A.bubble.style.top = ((-v3.y * 0.5 + 0.5) * h) + 'px'; }
+      }
+    });
+  }
+  function say(id, text, ms) {
+    var A = hub.avatars[id]; if (!A) return;
+    if (A.bubble) A.bubble.remove();
+    var b = document.createElement('div'); b.className = 'bubble'; b.textContent = text; labels.appendChild(b);
+    A.bubble = b; A.bubbleUntil = performance.now() + (ms || 5000);
+  }
+
+  // ---------- creator UI ----------
+  var current = clampCfg(DEFAULT);
+  var TABS = [
+    { name: 'Head', rows: [['head', 'Shape'], ['skin', 'Skin', SKIN]] },
+    { name: 'Face', rows: [['eyes', 'Eyes'], ['brows', 'Brows'], ['mouth', 'Mouth']] },
+    { name: 'Hair', rows: [['hair', 'Style'], ['hairColor', 'Colour', HAIRC]] },
+    { name: 'Body', rows: [['body', 'Build'], ['height', 'Height'], ['shirt', 'Top', CLOTH], ['pants', 'Bottom', CLOTH]] },
+    { name: 'Extra', rows: [['extra', 'Item']] }
+  ];
+  var tabIdx = 0;
+  function blip(f) {
+    try {
+      var ac = blip.ac || (blip.ac = new (window.AudioContext || window.webkitAudioContext)());
+      var o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = f || 660;
+      g.gain.setValueAtTime(0.05, ac.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.08);
+      o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.09);
+    } catch (e) {}
+  }
+  function drawUI() {
+    var tabs = document.getElementById('tabs'), rows = document.getElementById('rows');
+    tabs.innerHTML = ''; rows.innerHTML = '';
+    TABS.forEach(function (t, i) {
+      var e = document.createElement('div'); e.className = 'tab' + (i === tabIdx ? ' on' : ''); e.textContent = t.name;
+      e.onclick = function () { tabIdx = i; blip(520); drawUI(); }; tabs.appendChild(e);
+    });
+    TABS[tabIdx].rows.forEach(function (r) {
+      var key = r[0], row = document.createElement('div'); row.className = 'row';
+      var l = document.createElement('div'); l.className = 'lbl'; l.textContent = r[1]; row.appendChild(l);
+      if (r[2]) {
+        var sw = document.createElement('div'); sw.className = 'sw';
+        r[2].forEach(function (col, ci) { var s = document.createElement('i'); s.style.background = col; if (current[key] === ci) s.className = 'on'; s.onclick = function () { current[key] = ci; blip(780); setAvatar(current); drawUI(); }; sw.appendChild(s); });
+        row.appendChild(sw);
+      } else {
+        var list = OPTS[key], sel = document.createElement('div'); sel.className = 'sel';
+        var lft = document.createElement('b'); lft.textContent = '◄'; var rgt = document.createElement('b'); rgt.textContent = '►';
+        var sp = document.createElement('span'); sp.textContent = list[current[key]];
+        lft.onclick = function () { current[key] = (current[key] + list.length - 1) % list.length; blip(600); setAvatar(current); drawUI(); };
+        rgt.onclick = function () { current[key] = (current[key] + 1) % list.length; blip(700); setAvatar(current); drawUI(); };
+        sel.appendChild(lft); sel.appendChild(sp); sel.appendChild(rgt); row.appendChild(sel);
+      }
+      rows.appendChild(row);
+    });
+  }
+  function randomCfg() {
+    var c = {}; Object.keys(DEFAULT).forEach(function (k) {
+      var n = OPTS[k] ? OPTS[k].length : (k === 'skin' ? SKIN.length : k === 'hairColor' ? HAIRC.length : CLOTH.length);
+      c[k] = Math.floor(Math.random() * n);
+    }); return c;
+  }
+  function snapshot() {
+    // square portrait crop of the current low-res frame
+    renderFrame();
+    var src = canvas, s = Math.min(src.width, src.height), c = document.createElement('canvas'); c.width = c.height = 96;
+    var g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    g.drawImage(src, (src.width - s) / 2, 0, s, s, 0, 0, 96, 96);
+    return c.toDataURL('image/png');
+  }
+  document.getElementById('rand').onclick = function () { blip(880); setAvatar(randomCfg()); drawUI(); };
+  document.getElementById('done').onclick = function () { blip(990); send({ type: 'avatar', config: current, png: snapshot() }); };
+
+  // ---------- input ----------
+  var drag = null, spinV = 0;
+  canvas.addEventListener('pointerdown', function (e) { drag = { x: e.clientX, y: e.clientY, moved: 0 }; });
+  window.addEventListener('pointermove', function (e) { if (!drag) return; var dx = e.clientX - drag.x; drag.x = e.clientX; drag.moved += Math.abs(dx); if (mode === 'creator' && turntable) { turntable.rotation.y += dx * 0.012; spinV = dx * 0.012; } });
+  window.addEventListener('pointerup', function (e) {
+    if (drag && drag.moved < 6 && mode === 'hub') pick(e.clientX, e.clientY);
+    drag = null;
+  });
+  var ray = new T.Raycaster(), ndc = new T.Vector2();
+  function pick(cx, cy) {
+    var r = canvas.getBoundingClientRect(); ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    var objs = Object.keys(hub.avatars).map(function (id) { return hub.avatars[id].obj; });
+    var hit = ray.intersectObjects(objs, true)[0];
+    if (!hit) return;
+    var o = hit.object; while (o.parent && objs.indexOf(o) < 0) o = o.parent;
+    Object.keys(hub.avatars).forEach(function (id) { if (hub.avatars[id].obj === o) { blip(700); send({ type: 'tap', id: id }); } });
+  }
+
+  // ---------- bridge ----------
+  function send(msg) {
+    var s = JSON.stringify(msg);
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(s);
+    else if (window.parent !== window) window.parent.postMessage(s, '*');
+    window.__last = msg;
+  }
+  function receive(msg) {
+    if (typeof msg === 'string') { try { msg = JSON.parse(msg); } catch (e) { return; } }
+    if (!msg || !msg.type) return;
+    if (msg.type === 'setAvatar' && mode !== 'hub') { setAvatar(msg.config); drawUI(); }
+    if (msg.type === 'people' && mode === 'hub') layoutHub(msg.people);
+    if (msg.type === 'say' && mode === 'hub') say(msg.id, msg.text, msg.ms);
+  }
+  window.campfire = { receive: receive, snapshot: snapshot };
+  window.addEventListener('message', function (e) { receive(e.data); });
+  document.addEventListener('message', function (e) { receive(e.data); });
+
+  // ---------- loop ----------
+  function resize() {
+    var w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+    var lw = LOWRES, lh = Math.round(LOWRES * h / w);
+    renderer.setSize(lw, lh, false); rt.setSize(lw, lh);
+    post.uniforms.res.value.set(lw, lh); snapU.value.set(lw * 0.6, lh * 0.6);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  function renderFrame() {
+    renderer.setRenderTarget(rt); renderer.render(scene, camera);
+    post.uniforms.tDiffuse.value = rt.texture;
+    renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+  }
+  var last = performance.now(), t0 = last;
+  function loop(now) {
+    var dt = Math.min((now - last) / 1000, 0.1), t = (now - t0) / 1000; last = now;
+    if (mode !== 'hub' && turntable) { if (!drag) { spinV *= 0.94; turntable.rotation.y += spinV + (mode === 'portrait' || Math.abs(spinV) < 0.002 ? 0.004 : 0); } if (me) animateAvatar(me, t, dt, false); if (hub.ring) hub.ring.rotation.z = t * 0.4; }
+    if (mode === 'hub') {
+      hub.flames.forEach(function (f, i) { f.scale.y = 1 + Math.sin(t * (9 + i * 3)) * 0.18; f.rotation.y = t * (1.5 + i); });
+      hub.light.intensity = 3 + Math.sin(t * 13) * 0.35 + Math.sin(t * 7.3) * 0.25;
+      Object.keys(hub.avatars).forEach(function (id) { animateAvatar(hub.avatars[id].obj, t, dt, false); });
+      camera.position.x = Math.sin(t * 0.08) * 0.4; camera.lookAt(0, 0.5, -0.9);
+      renderLabels(false);
+    }
+    if (stars) stars.rotation.y = t * 0.01;
+    renderFrame();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- boot ----------
+  var init = window.CAMPFIRE_INIT || {};
+  var hm = (location.hash || '').replace('#', '');
+  mode = init.mode || hm || 'creator';
+  document.body.className = mode;
+  if (init.config) window.__cfg = init.config;
+  if (mode === 'hub') { setupHub(); layoutHub(init.people || []); }
+  else { setupCreator(); if (mode === 'creator') drawUI(); }
+  resize(); window.addEventListener('resize', resize);
+  requestAnimationFrame(loop);
+  send({ type: 'ready', mode: mode });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Campfire",
+    "slug": "campfire",
+    "scheme": "campfire",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#02040f",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.campfire.p2p",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Campfire uses the camera only to scan invite and meet-up QR codes.",
+        "NSMicrophoneUsageDescription": "Hold the mic to answer prompts by voice. Audio is transcribed on your phone and never uploaded.",
+        "NSLocalNetworkUsageDescription": "Campfire connects directly to friends' phones nearby."
+      }
+    },
+    "android": {
+      "package": "com.campfire.p2p",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE",
+        "CHANGE_WIFI_MULTICAST_STATE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Campfire uses the camera only to scan invite and meet-up QR codes."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Hold the mic to answer prompts by voice. Audio is transcribed on your phone and never uploaded."
+        }
+      ],
+      "@qvac/sdk/expo-plugin"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
