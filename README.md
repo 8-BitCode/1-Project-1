@@ -93,20 +93,6 @@ Open the app with wifi on once, so the models (about 900 MB total) download from
 
 ---
 
-## 3-minute demo script
-1. **Story (20s):** "Wei is a first-year from Shanghai. Three weeks in, no real conversation yet."
-2. **Creator (30s):** answer two prompts by voice, then build a PS1 avatar. Point out: "Those answers never left this phone."
-3. **Campfire (30s):** a second phone (a teammate or a judge, who scanned the invite QR) appears at the fire. Tap them to see what you have in common.
-4. **Wingmen (40s):** tap **Avatars chat**. The two avatars talk on the big screen, each written by its own phone.
-5. **Match + translation (30s):** wave on both phones. The chat opens. Type in Chinese, and it arrives translated in English.
-6. **Safety (15s):** send a nasty message. It's hidden on the receiver's phone with a confidence score, with no moderator.
-7. **Quest + proof (15s):** generate a quest, then scan each other's meet-up QR.
-8. **Kill the wifi (10s):** keep chatting over a phone hotspot. *"Nothing in this demo touched a server."*
-
-Have a backup screen recording ready.
-
----
-
 ## Project map
 ```
 app/                 Expo Router screens (title, welcome, prompts, creator, hub, wingman, friends, chat, meet, invite, me, scan)
